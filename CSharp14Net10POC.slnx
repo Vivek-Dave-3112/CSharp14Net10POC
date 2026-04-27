@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CSharp14Features/CSharp14Features.csproj" />
+    <Project Path="src/DotNet10Features/DotNet10Features.csproj" />
+  </Folder>
+</Solution>
