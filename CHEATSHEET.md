@@ -1,169 +1,207 @@
-# C# 14 + .NET 10 Cheat Sheet
+﻿# C# 14 + .NET 10 notes
 
-One-pager to revise the night before the test. Every feature has a **What / Why / Syntax** block and a **Test gotcha** row.
-
----
-
-## Part A — C# 14 language features
-
-### 1. Extension members
-- **What**: a new `extension(Type)` block that groups extension methods, **properties**, **indexers** and **static** members for a target type.
-- **Why**: before, you could only write extension *methods* (static with `this` first arg). You couldn't extend a type with a *property*.
-- **Syntax**:
-  ```csharp
-  public static class StringExt
-  {
-      extension(string s)
-      {
-          public bool IsPalindrome => s.SequenceEqual(s.Reverse());
-          public string ToPalindrome() => s + new string(s.Reverse().ToArray());
-      }
-      extension(string) // no instance param → static extension
-      {
-          public static string Repeat(string s, int n)
-              => string.Concat(Enumerable.Repeat(s, n));
-      }
-  }
-  ```
-- **Test gotcha**: extension **fields** are still NOT allowed. Only methods, properties, indexers, operators and static members.
-
-### 2. `field` keyword in property accessors
-- **What**: inside a `get`/`set`/`init`, the word `field` refers to the compiler-generated backing field.
-- **Why**: no more hand-declared `_name` backing fields for properties that need logic in their accessors.
-- **Syntax**:
-  ```csharp
-  public string Name
-  {
-      get => field;
-      set => field = value?.Trim() ?? throw new ArgumentNullException();
-  }
-  ```
-- **Test gotcha**: `field` is **contextual** — outside a property accessor it's still a normal identifier. If you have a variable named `field` it shadows the keyword.
-
-### 3. Null-conditional assignment
-- **What**: `?.` and `?[]` are allowed on the **left** side of `=` and compound assignments (`+=`, `-=`, …).
-- **Why**: removes the `if (x != null) x.Prop = …` boilerplate.
-- **Syntax**:
-  ```csharp
-  user?.Name = "Vivek";      // no-op if user is null
-  user?.LoginCount += 1;     // no-op if user is null
-  dict?["k"] = value;        // no-op if dict is null
-  ```
-- **Test gotcha**: if the target is null, **the right-hand side is not evaluated**. Classic question: "does `user?.X = HeavyCall()` call `HeavyCall()` when user is null?" → **No.**
-
-### 4. Partial members
-- **What**: recap of partial-member evolution:
-  - C# 3: partial methods (void, private, no return value)
-  - C# 9: less restrictive partial methods (any accessibility, return values)
-  - C# 13: partial **properties / indexers**
-  - **C# 14: partial instance constructors and partial events**
-- **Why**: source generators can now generate more of a type's surface.
-- **Syntax**:
-  ```csharp
-  public partial class Foo
-  {
-      public partial Foo(string s);          // declaration
-      public partial event EventHandler Bar; // declaration
-  }
-  public partial class Foo
-  {
-      public partial Foo(string s) { ... }   // implementation
-      public partial event EventHandler Bar { add { } remove { } }
-  }
-  ```
-- **Test gotcha**: the two halves must match **accessibility, parameter lists, and ref-ness** exactly, otherwise you get CS8795.
-
-### 5. `params` collections (from C# 13, still hot)
-- **What**: `params` parameters can be any collection expression target — `IEnumerable<T>`, `List<T>`, `Span<T>`, `ReadOnlySpan<T>`.
-- **Why**: `params ReadOnlySpan<int> xs` avoids the heap allocation that `params int[]` forces.
-- **Syntax**:
-  ```csharp
-  int Sum(params ReadOnlySpan<int> values) { ... }
-  Sum(1, 2, 3); // no int[] allocation
-  ```
-- **Test gotcha**: if multiple `params` overloads exist, the compiler picks the **most specific** — prefer `Span` > `ReadOnlyList` > `IEnumerable` > `T[]`.
-
-### 6. Unbound generic types in `nameof`
-- **What**: `nameof(List<>)` compiles. No dummy type arguments.
-- **Syntax**:
-  ```csharp
-  nameof(List<>)          // "List"
-  nameof(Dictionary<,>)   // "Dictionary"
-  ```
-- **Test gotcha**: it still returns just the **simple name**, not `List<>`.
-
-### 7. Lambda parameter modifiers without explicit types
-- **What**: you can write `(ref x) => ...` or `(out value) => ...` without repeating the parameter type.
-- **Syntax**:
-  ```csharp
-  TryParseIntDelegate p = (s, out value) => int.TryParse(s, out value);
-  ModifyIntDelegate   d = (ref x) => x *= 2;
-  ```
-- **Test gotcha**: still need `ref`/`out`/`in`/`scoped` — only the **type** is inferred.
-
-### 8. First-class `Span<T>` / `ReadOnlySpan<T>`
-- **What**: implicit conversions from `T[]` and `string` to `ReadOnlySpan<T>`, and from `Span<T>` to `ReadOnlySpan<T>`. Better overload resolution.
-- **Why**: lets you add span-based overloads without breaking array-based callers.
-- **Test gotcha**: when a method has **both** an array overload and a span overload, the **span overload wins** for array arguments — a silent source of behaviour change when you add a span overload to an existing API.
-
-### 9. User-defined compound assignment operators
-- **What**: you can declare `operator +=` (and `-=`, `*=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=`) directly, with a `void` return type, that mutates the instance.
-- **Why**: before, `x += y` was always `x = x + y`, forcing an allocation on mutable reference types (matrices, tensors, big ints).
-- **Syntax**:
-  ```csharp
-  public void operator +=(int amount) => Value += amount;
-  ```
-- **Test gotcha**: if you define `operator +` **and** `operator +=`, the compiler prefers `+=` for compound assignments. If you define only `+`, the classic rewrite `x = x + y` still applies.
+Quick reference for what each demo file in this repo is showing.
+Written so I can come back in three months and remember why a feature
+matters and what the syntax looks like.
 
 ---
 
-## Part B — .NET 10 BCL / runtime features
+## C# 14
 
-### 1. LINQ
-- **.NET 9** added `Index()`, `CountBy()`, `AggregateBy()`.
-- **.NET 10** adds `LeftJoin`, `RightJoin`, `Shuffle` (naming may still be finalising in preview builds).
-- Key test talking point: `CountBy` / `AggregateBy` are **one pass, no intermediate grouping**, so they're more efficient than `GroupBy(…).Select(g => (g.Key, g.Count()))`.
+### Extension members
 
-### 2. `System.Threading.Lock`
-- A dedicated lock type. `lock (myLock)` works when `myLock` is of type `Lock`, with better performance than locking on `object`.
-- **Test gotcha**: converting `Lock` to `object` (e.g. boxing into a field of type `object`) **disables** the fast path — the compiler warns.
+The new `extension(Type)` block lets you group extension methods,
+properties, indexers and static members against a target type. Pre-14
+you could only write extension *methods*.
 
-### 3. `TimeProvider`
-- Abstraction over "now": `TimeProvider.System.GetUtcNow()`, `GetTimestamp()`, etc.
-- Tests inject `Microsoft.Extensions.Time.Testing.FakeTimeProvider` and call `Advance(TimeSpan)` to control time.
-- `Task.Delay(delay, timeProvider)` and `CancellationTokenSource.CancelAfter(delay, timeProvider)` integrate directly.
+```csharp
+public static class StringExt
+{
+    extension(string s)
+    {
+        public bool IsPalindrome => s.SequenceEqual(s.Reverse());
+        public string ToPalindrome() => s + new string(s.Reverse().ToArray());
+    }
 
-### 4. `System.Text.Json`
-- `JsonSerializerDefaults.Web` - camelCase, case-insensitive, enums as strings.
+    extension(string)
+    {
+        public static string Repeat(string s, int n)
+            => string.Concat(Enumerable.Repeat(s, n));
+    }
+}
+```
+
+Extension fields are still not allowed - only methods, properties,
+indexers, operators and statics.
+
+### `field` keyword in property accessors
+
+Inside `get` / `set` / `init`, `field` refers to the compiler-generated
+backing field. No more hand-written `_name`.
+
+```csharp
+public string Name
+{
+    get => field;
+    set => field = value?.Trim() ?? throw new ArgumentNullException();
+}
+```
+
+It's a contextual keyword: a local or parameter named `field` shadows
+it, so the compiler treats the identifier as the local instead.
+
+### Null-conditional assignment
+
+`?.` and `?[]` now work on the left side of `=` and compound
+assignments.
+
+```csharp
+user?.Name = "Vivek";       // no-op if user is null
+user?.LoginCount += 1;      // no-op if user is null
+dict?["k"] = value;         // no-op if dict is null
+```
+
+If the target is null the right-hand side is not evaluated, so
+`user?.X = HeavyCall()` does not call `HeavyCall()` when `user` is
+null.
+
+### Partial members
+
+The history, in case anyone asks:
+
+- C# 3: partial methods (void, private)
+- C# 9: partial methods got proper accessibility and return types
+- C# 13: partial properties and indexers
+- C# 14: partial instance constructors and partial events
+
+```csharp
+public partial class Foo
+{
+    public partial Foo(string s);
+    public partial event EventHandler Bar;
+}
+
+public partial class Foo
+{
+    public partial Foo(string s) { /* ... */ }
+    public partial event EventHandler Bar { add { } remove { } }
+}
+```
+
+Both halves have to match accessibility, parameter list and ref-ness
+exactly or you get CS8795.
+
+### `params` collections
+
+`params` parameters can be any collection-expression target now, not
+just `T[]`. The interesting one is `params ReadOnlySpan<T>` which
+avoids the array allocation.
+
+```csharp
+int Sum(params ReadOnlySpan<int> values) { /* ... */ }
+
+Sum(1, 2, 3); // no int[] allocated
+```
+
+When you have multiple `params` overloads the compiler picks the most
+specific: `Span` > `ReadOnlyList` > `IEnumerable` > `T[]`.
+
+### Unbound generic `nameof`
+
+```csharp
+nameof(List<>)         // "List"
+nameof(Dictionary<,>)  // "Dictionary"
+```
+
+Still returns just the simple name, not `List<>`.
+
+### Lambda parameter modifiers without explicit types
+
+You can write `ref` / `out` / `in` / `scoped` on a lambda parameter
+without restating the type.
+
+```csharp
+TryParseIntDelegate p = (s, out value) => int.TryParse(s, out value);
+ModifyIntDelegate   d = (ref x) => x *= 2;
+```
+
+The modifier still has to be there - only the type is inferred.
+
+### First-class spans
+
+Implicit conversions exist now from `T[]` and `string` to
+`ReadOnlySpan<T>`, and from `Span<T>` to `ReadOnlySpan<T>`. Overload
+resolution also prefers spans.
+
+The thing to watch for: if a library has both an array overload and a
+span overload of the same method, calling it with an array will start
+binding to the span overload. Usually fine, but worth knowing if you
+ever see a behaviour change after a library upgrade.
+
+### User-defined compound operators
+
+You can now declare `operator +=`, `-=`, `*=`, `%=`, `&=`, `|=`, `^=`,
+`<<=`, `>>=`, `>>>=` directly. The return type is `void`, the operator
+mutates the instance.
+
+```csharp
+public void operator +=(int amount) => Value += amount;
+```
+
+If both `+` and `+=` are defined the compiler picks `+=` for compound
+assignments. If only `+` exists the old `x = x + y` rewrite still
+applies.
+
+---
+
+## .NET 10
+
+### LINQ
+
+.NET 9 added `Index()`, `CountBy()`, `AggregateBy()`. .NET 10 adds
+`LeftJoin` and `RightJoin`. `CountBy` and `AggregateBy` are single-pass
+- they don't materialise an intermediate `IGrouping`, so they're a fair
+bit faster than `GroupBy(...).Select(g => (g.Key, g.Count()))`.
+
+### `System.Threading.Lock`
+
+Dedicated lock type. `lock (myLock)` where `myLock : Lock` uses a fast
+path. Boxing the `Lock` into an `object` field defeats it - the
+compiler warns when you do.
+
+### `TimeProvider`
+
+Abstraction over "now". Use `TimeProvider.System` in production, and
+`Microsoft.Extensions.Time.Testing.FakeTimeProvider` (with `Advance(TimeSpan)`)
+in tests. `Task.Delay` and `CancellationTokenSource.CancelAfter` both
+have overloads that take a `TimeProvider`.
+
+### `System.Text.Json`
+
+A few things worth knowing:
+
+- `JsonSerializerDefaults.Web` - camelCase, case-insensitive,
+  enums-as-strings, all in one preset.
 - `[JsonPolymorphic]` + `[JsonDerivedType]` for discriminated unions.
-- `JsonUnmappedMemberHandling.Disallow` = strict mode, rejects unknown JSON properties.
-- **.NET 10**: better PipeReader/PipeWriter support for high-throughput scenarios; JSON Patch support.
+- `JsonUnmappedMemberHandling.Disallow` is strict mode - rejects unknown
+  properties.
+- .NET 10 adds better `PipeReader`/`PipeWriter` support and JSON Patch.
 
-### 5. ZIP async APIs
-- `ZipFile.CreateFromDirectory` / `ExtractToDirectory` + async stream variants.
-- Useful when you are zipping large folders on a web server.
+### ZIP async APIs
 
-### 6. `System.Numerics.Tensors`
-- SIMD-accelerated: `TensorPrimitives.Add`, `Multiply`, `Dot`, `CosineSimilarity`, `Softmax`, …
-- Hot path for embeddings / vector search.
+`ZipFile.CreateFromDirectoryAsync` / `ExtractToDirectoryAsync` (plus
+async stream variants). Lets you zip large folders on a request thread
+without blocking.
 
-### 7. Regex
-- `[GeneratedRegex("…")]` on a `static partial Regex Method();` emits optimized IL at build time — **AOT-safe**, zero reflection at runtime.
-- `Regex.EnumerateMatches` returns `ValueMatchEnumerator` — no allocations.
+### `System.Numerics.Tensors`
 
----
+SIMD-accelerated primitives: `TensorPrimitives.Add`, `Multiply`,
+`Dot`, `CosineSimilarity`, `Softmax`, etc. Useful for embeddings or
+any numeric vector work.
 
-## Must-remember answers for the test
+### Regex
 
-| Q | A |
-|---|---|
-| Which team shipped C# 14? | C# language team at Microsoft, with .NET 10 (Nov 2025). |
-| What's the target framework you used? | `net10.0`, `LangVersion=preview` during preview, later just `net10.0`. |
-| Which feature removes `if (x != null) x.P = …` ? | Null-conditional assignment (`x?.P = …`). |
-| Which feature removes hand-written `_backingField`? | The `field` keyword. |
-| Which C# version introduced `params ReadOnlySpan<T>`? | C# 13. |
-| How do you add a property to `string` without subclassing? | An extension member inside `extension(string s)`. |
-| When would you pick `System.Threading.Lock` over `object`? | Always for new code — faster and intent is clear. |
-| How do you make `DateTime.UtcNow` testable? | Depend on `TimeProvider`, inject `FakeTimeProvider` in tests. |
-| What does `[GeneratedRegex]` do? | Source-generates the Regex's IL at compile time (faster, AOT-safe). |
-| Why is `operator +=` useful in C# 14? | It lets mutable types avoid allocation in compound assignment. |
+`[GeneratedRegex("...")]` on a `static partial Regex Method();` emits
+the matcher at build time - AOT-safe and no reflection at runtime.
+`Regex.EnumerateMatches` returns a ref struct enumerator so it doesn't
+allocate per match.
